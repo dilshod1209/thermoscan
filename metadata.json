@@ -1,0 +1,6 @@
+{
+  "name": "THERMOSCAN AI",
+  "description": "Sanoat monitoringi to'plami. Jonli AR termal tasvirini ilg'or ma'lumotlar tahlili va AI bashorati bilan birlashtirgan professional boshqaruv paneli.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": []
+}

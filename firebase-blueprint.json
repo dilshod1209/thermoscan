@@ -1,0 +1,42 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User information for authentication and profile management.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "lastLogin": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email"]
+    },
+    "Activity": {
+      "title": "User Activity Log",
+      "description": "Logs of user actions like taking snapshots, generating reports, or thermal alerts.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "type": { "type": "string", "enum": ["snapshot", "report", "alert"] },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "zone": { "type": "string" },
+        "description": { "type": "string" },
+        "metadata": { "type": "object" }
+      },
+      "required": ["userId", "type", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Collection of user profiles."
+    },
+    "/activities/{activityId}": {
+      "schema": "Activity",
+      "description": "Global log of activities, filtered by userId in security rules."
+    }
+  }
+}

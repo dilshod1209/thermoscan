@@ -1,0 +1,89 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global safety net - Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Phase 3: Primitives & Global Helpers ---
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    
+    // Support for guest-operator bypass or anonymous users
+    // (In production, you'd strictly use request.auth.uid)
+    function isGuest(userId) { return userId == 'guest-operator'; }
+
+    // --- Phase 4: Hardened Rules (The Fortress) ---
+
+    // 1. User Profile Rules
+    match /users/{userId} {
+      function isValidUser(data) {
+        return data.keys().hasAll(['uid', 'email', 'displayName', 'photoURL', 'lastLogin']) &&
+               data.keys().size() == 5 &&
+               data.uid is string &&
+               data.uid.size() <= 128 &&
+               data.email is string &&
+               data.email.size() <= 256 &&
+               data.displayName is string &&
+               data.displayName.size() <= 100 &&
+               (data.photoURL == null || (data.photoURL is string && data.photoURL.size() <= 1000)) &&
+               data.lastLogin is string;
+      }
+
+      // Pillar 6: PII Isolation - Only owner can read their profile
+      allow get: if isOwner(userId);
+      // Pillar 2: Validation Blueprints
+      allow create: if isOwner(userId) && isValidUser(incoming());
+      // Pillar 4: Tiered Identity (Strict updates)
+      allow update: if isOwner(userId) && isValidUser(incoming()) && 
+                    incoming().uid == existing().uid &&
+                    incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'lastLogin']);
+    }
+
+    // 2. Activity Rules
+    match /activities/{activityId} {
+      function isValidActivity(data) {
+        return data.keys().hasAll(['userId', 'type', 'zone', 'description', 'metadata', 'timestamp']) &&
+               data.keys().size() == 6 &&
+               data.userId is string &&
+               data.userId.size() <= 128 &&
+               // Pillar 1: Relational Sync (Identity integrity)
+               (data.userId == request.auth.uid || isGuest(data.userId)) &&
+               data.type in ['snapshot', 'report', 'alert'] &&
+               data.zone is string &&
+               data.zone.size() <= 50 &&
+               data.description is string &&
+               data.description.size() <= 500 &&
+               data.metadata is map &&
+               // Pillar 10: Temporal Integrity
+               data.timestamp == request.time;
+      }
+
+      // Pillar 8: Secure List Queries (Query Enforcer)
+      // Client MUST query with where('userId', '==', request.auth.uid)
+      allow list: if (isSignedIn() && resource.data.userId == request.auth.uid) || 
+                    (resource.data.userId == 'guest-operator');
+      
+      allow get: if (isSignedIn() && resource.data.userId == request.auth.uid) || 
+                   (resource.data.userId == 'guest-operator');
+      
+      // Pillar 2 & 3: Validation & ID Hardening
+      allow create: if (isSignedIn() || incoming().userId == 'guest-operator') && 
+                      isValidId(activityId) && 
+                      isValidActivity(incoming());
+      
+      // Pillar 4: Terminal State / Immutability
+      // Activities are NEVER updated or deleted via client
+      allow update, delete: if false;
+    }
+
+    // 3. Connection Test
+    match /test/connection {
+      allow read: if true; // Open for diagnostics as requested by connection check logic
+    }
+  }
+}
